@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC GEX — Live Binance Options Gamma Exposure</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#0A0C10;
+    --panel:#12151C;
+    --panel-raised:#171B23;
+    --hair:#232830;
+    --hair-bright:#333A46;
+    --text:#E8EAED;
+    --text-dim:#8B93A1;
+    --text-faint:#565E6C;
+    --call:#E8A33D;
+    --call-dim:#6B5427;
+    --put:#6E7CE0;
+    --put-dim:#333B6B;
+    --flip:#E5484D;
+    --ok:#3DD68C;
+    --warn:#E8A33D;
+    --err:#E5484D;
+    --radius:3px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{background:var(--void); color:var(--text); font-family:'IBM Plex Mono', monospace;}
+  body{padding:0; min-height:100vh;}
+  ::selection{background:var(--call-dim); color:var(--text);}
+  ::-webkit-scrollbar{height:8px; width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--hair-bright); border-radius:4px;}
+  ::-webkit-scrollbar-track{background:var(--panel);}
+
+  #app{max-width:1180px; margin:0 auto; padding:20px 18px 60px;}
+
+  /* ---------- Header ---------- */
+  header{display:flex; flex-wrap:wrap; align-items:baseline; justify-content:space-between; gap:10px; padding-bottom:16px; border-bottom:1px solid var(--hair);}
+  .brand{display:flex; align-items:baseline; gap:12px;}
+  .brand h1{font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:19px; letter-spacing:0.02em;}
+  .brand .sub{font-size:10.5px; color:var(--text-faint); letter-spacing:0.08em; text-transform:uppercase;}
+  .ticker{display:flex; align-items:baseline; gap:10px;}
+  .ticker .px{font-family:'Space Grotesk', sans-serif; font-size:26px; font-weight:600; font-variant-numeric:tabular-nums;}
+  .ticker .chg{font-size:13px; font-weight:600; font-variant-numeric:tabular-nums;}
+  .chg.up{color:var(--ok);} .chg.down{color:var(--err);}
+  .status-row{width:100%; display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:10.5px; color:var(--text-faint);}
+  .status-dot{display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:5px; position:relative; top:-1px;}
+  .status-dot.live{background:var(--ok); box-shadow:0 0 6px var(--ok);}
+  .status-dot.err{background:var(--err); box-shadow:0 0 6px var(--err);}
+  .status-dot.pending{background:var(--warn); animation:pulse 1s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;} 50%{opacity:0.3;}}
+
+  /* ---------- Summary cards ---------- */
+  .summary-grid{display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); gap:1px; background:var(--hair); margin:18px 0; border:1px solid var(--hair);}
+  .card{background:var(--panel); padding:14px 15px;}
+  .card .label{font-size:9.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-faint); margin-bottom:8px;}
+  .card .value{font-family:'Space Grotesk',sans-serif; font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; line-height:1.1;}
+  .card .value.pos{color:var(--call);}
+  .card .value.neg{color:var(--put);}
+  .card .note{font-size:9.5px; color:var(--text-faint); margin-top:5px;}
+
+  /* ---------- Controls ---------- */
+  .controls{display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:14px;}
+  .expiry-tabs{display:flex; gap:6px; overflow-x:auto; padding-bottom:4px;}
+  .expiry-tabs button{flex:0 0 auto; background:var(--panel); color:var(--text-dim); border:1px solid var(--hair); border-radius:var(--radius); padding:6px 11px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; white-space:nowrap;}
+  .expiry-tabs button:hover{border-color:var(--hair-bright); color:var(--text);}
+  .expiry-tabs button.active{background:var(--panel-raised); color:var(--text); border-color:var(--call);}
+  .right-controls{display:flex; align-items:center; gap:10px;}
+  .conv-toggle{display:flex; align-items:center; gap:8px; font-size:10.5px; color:var(--text-dim);}
+  .switch{position:relative; width:38px; height:18px; background:var(--hair-bright); border-radius:9px; cursor:pointer; border:none;}
+  .switch::after{content:''; position:absolute; width:14px; height:14px; border-radius:50%; background:var(--text-dim); top:2px; left:2px; transition:transform .15s;}
+  .switch.on::after{transform:translateX(20px); background:var(--call);}
+  #refreshBtn{background:var(--panel); color:var(--text); border:1px solid var(--hair-bright); border-radius:var(--radius); padding:6px 12px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer;}
+  #refreshBtn:hover{border-color:var(--call);}
+  #refreshBtn:disabled{opacity:0.4; cursor:default;}
+
+  /* ---------- Chart panel ---------- */
+  .chart-panel{background:var(--panel); border:1px solid var(--hair); border-radius:var(--radius); padding:16px; margin-bottom:16px; min-height:420px; position:relative;}
+  .chart-panel h2{font-family:'Space Grotesk',sans-serif; font-size:13px; font-weight:600; margin-bottom:2px;}
+  .chart-panel .chart-sub{font-size:10px; color:var(--text-faint); margin-bottom:10px;}
+  .legend{display:flex; gap:16px; font-size:10px; color:var(--text-dim); margin-bottom:8px;}
+  .legend span{display:inline-flex; align-items:center; gap:5px;}
+  .legend i{width:9px; height:9px; display:inline-block; border-radius:1px;}
+
+  /* ---------- Table ---------- */
+  .table-panel{background:var(--panel); border:1px solid var(--hair); border-radius:var(--radius); overflow:hidden; margin-bottom:16px;}
+  .table-panel h2{font-family:'Space Grotesk',sans-serif; font-size:13px; font-weight:600; padding:14px 16px 0;}
+  .table-scroll{overflow-x:auto; padding:10px 0 16px;}
+  table{width:100%; border-collapse:collapse; font-size:11px; min-width:720px;}
+  thead th{text-align:right; font-weight:500; color:var(--text-faint); font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; padding:6px 14px; border-bottom:1px solid var(--hair);}
+  thead th:first-child, tbody td:first-child{text-align:left;}
+  tbody td{text-align:right; padding:6px 14px; font-variant-numeric:tabular-nums; border-bottom:1px solid rgba(255,255,255,0.02);}
+  tbody tr:hover{background:rgba(255,255,255,0.02);}
+  tbody tr.flip-row td{border-top:1px dashed var(--flip); border-bottom:1px dashed var(--flip);}
+  td.pos{color:var(--call);} td.neg{color:var(--put);}
+
+  /* ---------- Empty / error states ---------- */
+  .state-msg{display:flex; flex-direction:column; align-items:center; justify-content:center; height:340px; color:var(--text-faint); text-align:center; gap:8px;}
+  .state-msg .big{font-size:13px; color:var(--text-dim); font-family:'Space Grotesk',sans-serif;}
+  .state-msg .small{font-size:11px; max-width:460px; line-height:1.6; text-align:left; font-family:'IBM Plex Mono',monospace;}
+  .state-msg .small div{margin-top:2px;}
+  .state-msg button{margin-top:6px; background:var(--panel-raised); border:1px solid var(--hair-bright); color:var(--text); padding:7px 14px; border-radius:var(--radius); cursor:pointer; font-family:'IBM Plex Mono',monospace; font-size:11px;}
+
+  /* ---------- Footer / methodology ---------- */
+  footer{border-top:1px solid var(--hair); padding-top:16px; font-size:11px; color:var(--text-dim); line-height:1.6;}
+  footer h3{font-family:'Space Grotesk',sans-serif; font-size:11.5px; color:var(--text); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em;}
+  footer .block{margin-bottom:16px;}
+  footer code{background:var(--panel-raised); padding:1px 5px; border-radius:2px; font-size:10.5px;}
+  footer .skip-note{border-left:2px solid var(--put); padding-left:10px; color:var(--text-faint);}
+  .debugline{font-size:9.5px; color:var(--text-faint); margin-top:6px;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <header>
+    <div class="brand">
+      <h1>BTC GEX</h1>
+      <span class="sub">Gamma Exposure · Binance Options (EAPI)</span>
+    </div>
+    <div class="ticker">
+      <span class="px" id="spotPx">—</span>
+      <span class="chg" id="spotChg">—</span>
+    </div>
+    <div class="status-row">
+      <span id="statusLine"><span class="status-dot pending" id="statusDot"></span><span id="statusText">Connecting to Binance…</span></span>
+      <span id="lastUpdate">—</span>
+    </div>
+  </header>
+
+  <section class="summary-grid" id="summaryGrid">
+    <div class="card"><div class="label">Net GEX</div><div class="value" id="cNetGex">—</div><div class="note">per 1% BTC move</div></div>
+    <div class="card"><div class="label">Regime</div><div class="value" id="cRegime">—</div><div class="note" id="cRegimeNote">—</div></div>
+    <div class="card"><div class="label">Gamma Flip</div><div class="value" id="cFlip">—</div><div class="note">zero-cross strike</div></div>
+    <div class="card"><div class="label">Call GEX</div><div class="value pos" id="cCallGex">—</div><div class="note" id="cCallOi">OI —</div></div>
+    <div class="card"><div class="label">Put GEX</div><div class="value neg" id="cPutGex">—</div><div class="note" id="cPutOi">OI —</div></div>
+    <div class="card"><div class="label">Total OI</div><div class="value" id="cTotalOi">—</div><div class="note">contracts (BTC)</div></div>
+  </section>
+
+  <section class="controls">
+    <div class="expiry-tabs" id="expiryTabs"><button class="active" data-exp="ALL">ALL EXPIRIES</button></div>
+    <div class="right-controls">
+      <div class="conv-toggle">
+        <span id="convLabel">Dealers: short calls / long puts</span>
+        <button class="switch" id="convSwitch" title="Flip dealer-positioning convention"></button>
+      </div>
+      <button id="refreshBtn">↻ Refresh</button>
+    </div>
+  </section>
+
+  <section class="chart-panel">
+    <h2>Gamma Exposure by Strike</h2>
+    <div class="chart-sub" id="chartSub">Waiting for data…</div>
+    <div class="legend">
+      <span><i style="background:var(--call)"></i>Call GEX</span>
+      <span><i style="background:var(--put)"></i>Put GEX</span>
+      <span><i style="background:var(--flip)"></i>Gamma flip</span>
+    </div>
+    <div id="chartContainer"></div>
+  </section>
+
+  <section class="table-panel">
+    <h2>Strike Detail</h2>
+    <div class="table-scroll" id="tableScroll">
+      <div class="state-msg"><div class="big">No data yet</div></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="block">
+      <h3>Methodology</h3>
+      <p>For every listed BTC option on Binance, gamma exposure is computed as
+      <code>GEX = γ × OpenInterest × ContractUnit × Spot² × 0.01</code> — the dollar change in dealer delta-hedging demand per 1% move in BTC.
+      Gamma (γ) and open interest are pulled live from Binance's <code>/eapi/v1/mark</code> and <code>/eapi/v1/openInterest</code> endpoints; nothing here is simulated, backfilled, or interpolated from another venue.
+      Sign convention assumes dealers are net <span id="convFooter">short calls and long puts</span> (the standard public GEX convention — flip the switch above if you model it the other way; true dealer positioning is never public knowledge, on any venue).</p>
+    </div>
+    <div class="block skip-note">
+      <h3>Why not PAXG or EURUSDT?</h3>
+      <p>GEX only exists where an options market exists. Binance lists no options chain for PAXG or EURUSDT — and no other public API exposes one either — so there is no open interest or gamma to calculate against. Rather than fabricate a number, this app only covers BTC, the one asset where Binance provides real options data.</p>
+    </div>
+    <div class="block">
+      <h3>Data quality note</h3>
+      <p>Binance's BTC options market is thin relative to Deribit or CME. Treat strikes with very low open interest as directional signal only, not a precise institutional read — check the OI column before weighting any single strike.</p>
+    </div>
+    <div class="debugline" id="debugLine"></div>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------------- State ----------------
+  const state = {
+    spot: null,
+    spotChangePct: null,
+    optionSymbols: [],      // from exchangeInfo
+    expirations: [],        // [{ms, yymmdd, label}]
+    markMap: {},             // symbol -> {gamma, delta, markIV}
+    oiMap: {},               // symbol -> {sumOpenInterest}
+    selectedExpiry: 'ALL',
+    dealerConvention: 1,     // 1 = short calls/long puts (calls +, puts -); -1 = flipped
+    lastGoodProxy: null,     // remembered per-session only, never persisted to disk
+    refreshTimer: null,
+    loading: false
+  };
+
+  const BASE_SPOT = 'https://api.binance.com';
+  const BASE_EAPI = 'https://eapi.binance.com';
+  const PROXIES = [
+    null, // null = direct, no proxy
+    (u) => 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u),
+    (u) => 'https://corsproxy.io/?url=' + encodeURIComponent(u),
+    (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u)
+  ];
+
+  function fmtUSD(n, opts){
+    opts = opts || {};
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    const abs = Math.abs(n);
+    let str;
+    if (abs >= 1e9) str = (n/1e9).toFixed(2) + 'B';
+    else if (abs >= 1e6) str = (n/1e6).toFixed(2) + 'M';
+    else if (abs >= 1e3) str = (n/1e3).toFixed(1) + 'K';
+    else str = n.toFixed(0);
+    return (opts.noSign ? '' : (n >= 0 ? '+' : '')) + '$' + str;
+  }
+  function fmtNum(n, d){
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    return Number(n).toLocaleString(undefined, {maximumFractionDigits: d===undefined?2:d});
+  }
+
+  // ---------------- Networking with CORS fallback ----------------
+  async function fetchJson(url, timeoutMs){
+    timeoutMs = timeoutMs || 15000;
+    const attempts = state.lastGoodProxy !== null
+      ? [PROXIES[state.lastGoodProxy], ...PROXIES.filter((_,i)=>i!==state.lastGoodProxy)]
+      : PROXIES.slice();
+
+    const attemptLog = [];
+    for (let i = 0; i < attempts.length; i++){
+      const wrapper = attempts[i];
+      const target = wrapper ? wrapper(url) : url;
+      const idx = PROXIES.indexOf(wrapper);
+      const label = proxyName(idx);
+      const startedAt = performance.now();
+      try{
+        const ctrl = new AbortController();
+        const t = setTimeout(()=>ctrl.abort(), timeoutMs);
+        const res = await fetch(target, {signal: ctrl.signal, headers: {'Accept':'application/json'}});
+        clearTimeout(t);
+        const ms = Math.round(performance.now()-startedAt);
+        if (!res.ok){
+          attemptLog.push(label + ': HTTP ' + res.status + ' (' + ms + 'ms)');
+          continue;
+        }
+        const text = await res.text();
+        let data;
+        try{ data = JSON.parse(text); }
+        catch(parseErr){
+          attemptLog.push(label + ': bad JSON, got "' + text.slice(0,60).replace(/\s+/g,' ') + '" (' + ms + 'ms)');
+          continue;
+        }
+        if (data && !Array.isArray(data) && typeof data.code !== 'undefined' && typeof data.msg !== 'undefined'){
+          attemptLog.push(label + ': Binance error ' + data.code + ' — "' + String(data.msg).slice(0,80) + '" (' + ms + 'ms)');
+          continue;
+        }
+        state.lastGoodProxy = idx;
+        state.lastAttemptLog = attemptLog;
+        return data;
+      }catch(e){
+        const ms = Math.round(performance.now()-startedAt);
+        const reason = e.name === 'AbortError' ? ('timeout after ' + Math.round(timeoutMs/1000) + 's') : e.message;
+        attemptLog.push(label + ': ' + reason + ' (' + ms + 'ms)');
+        continue;
+      }
+    }
+    state.lastAttemptLog = attemptLog;
+    const err = new Error('All 4 fetch paths failed for ' + url.replace(BASE_EAPI,'').replace(BASE_SPOT,'') + ':\n' + attemptLog.join('\n'));
+    throw err;
+  }
+
+  function proxyName(idx){
+    if (idx === 0 || idx === null) return 'direct';
+    if (idx === 1) return 'codetabs proxy';
+    if (idx === 2) return 'corsproxy.io';
+    if (idx === 3) return 'allorigins';
+    return 'unknown';
+  }
+
+  // ---------------- Status UI ----------------
+  function setStatus(kind, text){
+    const dot = document.getElementById('statusDot');
+    const t = document.getElementById('statusText');
+    dot.className = 'status-dot ' + kind;
+    t.textContent = text;
+  }
+  function setDebug(msg){
+    document.getElementById('debugLine').textContent = msg;
+  }
+
+  // ---------------- Data loading ----------------
+  async function loadSpot(){
+    const d = await fetchJson(BASE_SPOT + '/api/v3/ticker/24hr?symbol=BTCUSDT');
+    state.spot = parseFloat(d.lastPrice);
+    state.spotChangePct = parseFloat(d.priceChangePercent);
+  }
+
+  async function loadExchangeInfo(){
+    const d = await fetchJson(BASE_EAPI + '/eapi/v1/exchangeInfo');
+    const all = d.optionSymbols || d.data && d.data.optionSymbols || (Array.isArray(d) ? d : []);
+    if (!all.length){
+      if (d && typeof d.code !== 'undefined'){
+        throw new Error('Binance rejected the request — code ' + d.code + ': "' + d.msg + '"');
+      }
+      const keys = Object.keys(d || {}).join(', ');
+      throw new Error('exchangeInfo response had no optionSymbols array. Top-level keys received: [' + keys + ']');
+    }
+
+    // Don't trust a single guessed field name for "underlying" — Binance has changed
+    // this schema before. The option symbol string itself (e.g. "BTC-250815-70000-C")
+    // is the one thing guaranteed to encode the underlying asset, so use that as the
+    // primary signal and fall back to underlying/underlyingAsset if present.
+    function assetOf(s){
+      if (typeof s.symbol === 'string' && s.symbol.includes('-')) return s.symbol.split('-')[0].toUpperCase();
+      const u = (s.underlying || s.underlyingAsset || s.baseAsset || '').toUpperCase();
+      return u.replace('USDT','').replace('USD','');
+    }
+
+    const assetCounts = {};
+    all.forEach(s => { const a = assetOf(s); assetCounts[a] = (assetCounts[a]||0)+1; });
+
+    const syms = all.filter(s => assetOf(s) === 'BTC');
+    if (!syms.length){
+      const summary = Object.entries(assetCounts).map(([a,c])=>a+':'+c).join(', ');
+      throw new Error('No BTC option symbols found. Assets actually present in exchangeInfo: [' + summary + ']. Sample raw symbol: ' + JSON.stringify(all[0]).slice(0,200));
+    }
+
+    state.optionSymbols = syms.map(s => ({
+      symbol: s.symbol,
+      strike: parseFloat(s.strikePrice),
+      side: (s.side || (s.symbol && s.symbol.slice(-1)) || '').toUpperCase().startsWith('C') ? 'CALL' : 'PUT',
+      expiryMs: Number(s.expiryDate),
+      unit: parseFloat(s.unit || s.contractSize || 1) || 1
+    }));
+
+    const expMap = new Map();
+    state.optionSymbols.forEach(s => {
+      if (!expMap.has(s.expiryMs)) expMap.set(s.expiryMs, true);
+    });
+    state.expirations = Array.from(expMap.keys()).sort((a,b)=>a-b).map(ms => {
+      const dt = new Date(ms);
+      const yy = String(dt.getUTCFullYear()).slice(2);
+      const mm = String(dt.getUTCMonth()+1).padStart(2,'0');
+      const dd = String(dt.getUTCDate()).padStart(2,'0');
+      const label = dt.toLocaleDateString('en-US', {day:'2-digit', month:'short', year:'2-digit', timeZone:'UTC'});
+      return {ms, yymmdd: yy+mm+dd, label};
+    });
+  }
+
+  async function loadMarkData(){
+    const d = await fetchJson(BASE_EAPI + '/eapi/v1/mark');
+    const arr = Array.isArray(d) ? d : [d];
+    const map = {};
+    arr.forEach(m => {
+      map[m.symbol] = {
+        gamma: parseFloat(m.gamma),
+        delta: parseFloat(m.delta),
+        markIV: parseFloat(m.markIV)
+      };
+    });
+    state.markMap = map;
+  }
+
+  async function loadOpenInterestForExpiry(yymmdd){
+    const url = BASE_EAPI + '/eapi/v1/openInterest?underlyingAsset=BTC&expiration=' + yymmdd;
+    const d = await fetchJson(url);
+    const arr = Array.isArray(d) ? d : [d];
+    arr.forEach(o => {
+      state.oiMap[o.symbol] = { sumOpenInterest: parseFloat(o.sumOpenInterest) };
+    });
+  }
+
+  async function loadOpenInterestAll(){
+    state.oiMap = {};
+    const exps = state.selectedExpiry === 'ALL'
+      ? state.expirations
+      : state.expirations.filter(e => e.yymmdd === state.selectedExpiry);
+    for (const e of exps){
+      try{ await loadOpenInterestForExpiry(e.yymmdd); }
+      catch(err){ /* one expiry failing shouldn't kill the whole load */ console.warn('OI failed for', e.yymmdd, err); }
+    }
+  }
+
+  // ---------------- GEX computation ----------------
+  function computeGEX(){
+    const bySymbol = state.optionSymbols.filter(s => {
+      if (state.selectedExpiry !== 'ALL'){
+        const exp = state.expirations.find(e => e.yymmdd === state.selectedExpiry);
+        if (!exp || s.expiryMs !== exp.ms) return false;
+      }
+      return state.oiMap[s.symbol] && state.markMap[s.symbol];
+    });
+
+    const strikeMap = new Map();
+    const spot = state.spot;
+    let missingGamma = 0;
+
+    bySymbol.forEach(s => {
+      const oi = state.oiMap[s.symbol].sumOpenInterest || 0;
+      const gamma = state.markMap[s.symbol].gamma;
+      if (gamma === null || isNaN(gamma)){ missingGamma++; return; }
+      const gex = gamma * oi * s.unit * spot * spot * 0.01;
+      if (!strikeMap.has(s.strike)) strikeMap.set(s.strike, {strike: s.strike, callOI:0, putOI:0, callGamma:0, putGamma:0, callGEX:0, putGEX:0});
+      const row = strikeMap.get(s.strike);
+      if (s.side === 'CALL'){
+        row.callOI += oi; row.callGamma = gamma; row.callGEX += gex * state.dealerConvention;
+      } else {
+        row.putOI += oi; row.putGamma = gamma; row.putGEX += -gex * state.dealerConvention;
+      }
+    });
+
+    const rows = Array.from(strikeMap.values()).sort((a,b)=>a.strike-b.strike);
+    rows.forEach(r => r.netGEX = r.callGEX + r.putGEX);
+
+    let cum = 0, flipStrike = null;
+    for (let i = 0; i < rows.length; i++){
+      const prevCum = cum;
+      cum += rows[i].netGEX;
+      rows[i].cumGEX = cum;
+      if (i > 0 && ((prevCum < 0 && cum >= 0) || (prevCum > 0 && cum <= 0))){
+        const prevRow = rows[i-1];
+        const span = rows[i].strike - prevRow.strike;
+        const frac = span === 0 ? 0 : (0 - prevCum) / (cum - prevCum);
+        flipStrike = prevRow.strike + frac * span;
+      }
+    }
+
+    const totalCallGEX = rows.reduce((a,r)=>a+r.callGEX,0);
+    const totalPutGEX = rows.reduce((a,r)=>a+r.putGEX,0);
+    const netGEX = totalCallGEX + totalPutGEX;
+    const totalCallOI = rows.reduce((a,r)=>a+r.callOI,0);
+    const totalPutOI = rows.reduce((a,r)=>a+r.putOI,0);
+
+    return {rows, netGEX, totalCallGEX, totalPutGEX, totalCallOI, totalPutOI, flipStrike, missingGamma, symbolCount: bySymbol.length};
+  }
+
+  // ---------------- Rendering ----------------
+  function renderSummary(res){
+    document.getElementById('cNetGex').textContent = fmtUSD(res.netGEX);
+    document.getElementById('cNetGex').className = 'value ' + (res.netGEX >= 0 ? 'pos':'neg');
+
+    const regimeEl = document.getElementById('cRegime');
+    const regimeNote = document.getElementById('cRegimeNote');
+    if (res.netGEX >= 0){
+      regimeEl.textContent = 'POSITIVE'; regimeEl.className = 'value pos';
+      regimeNote.textContent = 'dealer hedging dampens moves';
+    } else {
+      regimeEl.textContent = 'NEGATIVE'; regimeEl.className = 'value neg';
+      regimeNote.textContent = 'dealer hedging amplifies moves';
+    }
+
+    document.getElementById('cFlip').textContent = res.flipStrike !== null ? fmtNum(res.flipStrike,0) : 'n/a';
+    document.getElementById('cCallGex').textContent = fmtUSD(res.totalCallGEX);
+    document.getElementById('cCallOi').textContent = 'OI ' + fmtNum(res.totalCallOI,2);
+    document.getElementById('cPutGex').textContent = fmtUSD(res.totalPutGEX);
+    document.getElementById('cPutOi').textContent = 'OI ' + fmtNum(res.totalPutOI,2);
+    document.getElementById('cTotalOi').textContent = fmtNum(res.totalCallOI + res.totalPutOI, 2);
+  }
+
+  function renderChart(res){
+    const container = document.getElementById('chartContainer');
+    const sub = document.getElementById('chartSub');
+    if (!res.rows.length){
+      container.innerHTML = '';
+      sub.textContent = 'No strikes with both open interest and gamma data for this selection.';
+      return;
+    }
+    sub.textContent = res.symbolCount + ' option legs · ' + res.rows.length + ' strikes' + (res.missingGamma ? ' · ' + res.missingGamma + ' legs missing greeks (skipped)' : '');
+
+    const W = 1100, H = 380, padL = 60, padR = 20, padT = 10, padB = 40;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+
+    const maxAbs = Math.max(1, ...res.rows.map(r => Math.max(Math.abs(r.callGEX), Math.abs(r.putGEX))));
+    const strikes = res.rows.map(r=>r.strike);
+    const minS = Math.min(...strikes), maxS = Math.max(...strikes);
+    const spanS = Math.max(1, maxS - minS);
+    const xFor = (s) => padL + ((s - minS) / spanS) * plotW;
+    const zeroY = padT + plotH/2;
+    const yFor = (v) => zeroY - (v / maxAbs) * (plotH/2 - 10);
+
+    const barW = Math.max(2, Math.min(14, plotW / res.rows.length * 0.7));
+
+    let bars = '';
+    res.rows.forEach(r => {
+      const x = xFor(r.strike) - barW/2;
+      if (r.callGEX !== 0){
+        const y1 = yFor(Math.max(0,r.callGEX)), y2 = yFor(Math.min(0,r.callGEX));
+        bars += `<rect x="${x}" y="${Math.min(y1,y2)}" width="${barW}" height="${Math.max(1,Math.abs(y2-y1))}" fill="var(--call)" opacity="0.85"><title>Strike ${r.strike}: Call GEX ${fmtUSD(r.callGEX)}</title></rect>`;
+      }
+      if (r.putGEX !== 0){
+        const y1 = yFor(Math.max(0,r.putGEX)), y2 = yFor(Math.min(0,r.putGEX));
+        bars += `<rect x="${x}" y="${Math.min(y1,y2)}" width="${barW}" height="${Math.max(1,Math.abs(y2-y1))}" fill="var(--put)" opacity="0.85"><title>Strike ${r.strike}: Put GEX ${fmtUSD(r.putGEX)}</title></rect>`;
+      }
+    });
+
+    let cumPath = 'M ';
+    res.rows.forEach((r,i) => {
+      const x = xFor(r.strike);
+      const yMaxCum = Math.max(...res.rows.map(rr=>Math.abs(rr.cumGEX)), 1);
+      const y = zeroY - (r.cumGEX / yMaxCum) * (plotH/2 - 10);
+      cumPath += (i===0 ? '' : 'L ') + x.toFixed(1) + ' ' + y.toFixed(1) + ' ';
+    });
+
+    let flipLine = '';
+    if (res.flipStrike !== null && res.flipStrike >= minS && res.flipStrike <= maxS){
+      const fx = xFor(res.flipStrike);
+      flipLine = `
+        <line x1="${fx}" y1="${padT}" x2="${fx}" y2="${padT+plotH}" stroke="var(--flip)" stroke-width="1.5" stroke-dasharray="2,3"/>
+        <path d="M ${fx-6} ${padT+8} L ${fx} ${padT} L ${fx+6} ${padT+8} L ${fx-2} ${padT+18} L ${fx+5} ${padT+10} L ${fx-4} ${padT+26}" stroke="var(--flip)" stroke-width="1.2" fill="none" opacity="0.8"/>
+        <text x="${fx}" y="${padT+34}" fill="var(--flip)" font-size="9" text-anchor="middle" font-family="IBM Plex Mono">FLIP ${fmtNum(res.flipStrike,0)}</text>`;
+    }
+
+    let spotLine = '';
+    if (state.spot >= minS && state.spot <= maxS){
+      const sx = xFor(state.spot);
+      spotLine = `<line x1="${sx}" y1="${padT}" x2="${sx}" y2="${padT+plotH}" stroke="var(--text-dim)" stroke-width="1" stroke-dasharray="1,2" opacity="0.6"/>
+      <text x="${sx}" y="${padT+plotH+16}" fill="var(--text-dim)" font-size="9" text-anchor="middle" font-family="IBM Plex Mono">SPOT</text>`;
+    }
+
+    const xTicks = [];
+    const tickCount = Math.min(8, res.rows.length);
+    for (let i=0;i<=tickCount;i++){
+      const s = minS + (spanS * i/tickCount);
+      xTicks.push(`<text x="${xFor(s)}" y="${padT+plotH+30}" fill="var(--text-faint)" font-size="9" text-anchor="middle" font-family="IBM Plex Mono">${fmtNum(s,0)}</text>`);
+    }
+
+    container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="width:100%; height:auto; display:block;">
+      <line x1="${padL}" y1="${zeroY}" x2="${W-padR}" y2="${zeroY}" stroke="var(--hair-bright)" stroke-width="1"/>
+      ${bars}
+      <path d="${cumPath}" stroke="var(--text)" stroke-width="1.3" fill="none" opacity="0.55"/>
+      ${flipLine}
+      ${spotLine}
+      ${xTicks.join('')}
+    </svg>`;
+  }
+
+  function renderTable(res){
+    const wrap = document.getElementById('tableScroll');
+    if (!res.rows.length){
+      wrap.innerHTML = '<div class="state-msg"><div class="big">No strikes to show</div><div class="small">Try a different expiry, or check the status line above for fetch errors.</div></div>';
+      return;
+    }
+    let html = `<table><thead><tr>
+      <th>Strike</th><th>Call OI</th><th>Call γ</th><th>Call GEX</th>
+      <th>Put OI</th><th>Put γ</th><th>Put GEX</th><th>Net GEX</th>
+    </tr></thead><tbody>`;
+    const flip = res.flipStrike;
+    res.rows.forEach((r,i) => {
+      const isFlipRow = flip !== null && i < res.rows.length-1 &&
+        ((res.rows[i].cumGEX < 0 && res.rows[i+1].cumGEX >= 0) || (res.rows[i].cumGEX > 0 && res.rows[i+1].cumGEX <= 0));
+      html += `<tr class="${isFlipRow ? 'flip-row':''}">
+        <td>${fmtNum(r.strike,0)}</td>
+        <td>${fmtNum(r.callOI,2)}</td>
+        <td>${r.callGamma ? r.callGamma.toFixed(5) : '—'}</td>
+        <td class="${r.callGEX>=0?'pos':'neg'}">${fmtUSD(r.callGEX)}</td>
+        <td>${fmtNum(r.putOI,2)}</td>
+        <td>${r.putGamma ? r.putGamma.toFixed(5) : '—'}</td>
+        <td class="${r.putGEX>=0?'pos':'neg'}">${fmtUSD(r.putGEX)}</td>
+        <td class="${r.netGEX>=0?'pos':'neg'}">${fmtUSD(r.netGEX)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  }
+
+  function renderExpiryTabs(){
+    const el = document.getElementById('expiryTabs');
+    let html = `<button data-exp="ALL" class="${state.selectedExpiry==='ALL'?'active':''}">ALL EXPIRIES</button>`;
+    state.expirations.slice(0,10).forEach(e => {
+      html += `<button data-exp="${e.yymmdd}" class="${state.selectedExpiry===e.yymmdd?'active':''}">${e.label}</button>`;
+    });
+    el.innerHTML = html;
+    el.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', async () => {
+        state.selectedExpiry = b.getAttribute('data-exp');
+        renderExpiryTabs();
+        await refreshComputationOnly();
+      });
+    });
+  }
+
+  function renderHeader(){
+    if (state.spot !== null){
+      document.getElementById('spotPx').textContent = '$' + state.spot.toLocaleString(undefined,{maximumFractionDigits:2});
+    }
+    if (state.spotChangePct !== null){
+      const el = document.getElementById('spotChg');
+      el.textContent = (state.spotChangePct>=0?'+':'') + state.spotChangePct.toFixed(2) + '%';
+      el.className = 'chg ' + (state.spotChangePct>=0 ? 'up':'down');
+    }
+    document.getElementById('lastUpdate').textContent = 'updated ' + new Date().toLocaleTimeString();
+  }
+
+  // ---------------- Orchestration ----------------
+  async function refreshComputationOnly(){
+    if (!state.optionSymbols.length) return;
+    setStatus('pending', 'Loading open interest for selection…');
+    try{
+      await loadOpenInterestAll();
+      const res = computeGEX();
+      renderSummary(res);
+      renderChart(res);
+      renderTable(res);
+      setStatus('live', 'Live — via ' + proxyName(state.lastGoodProxy));
+      setDebug('Symbols: ' + state.optionSymbols.length + ' · Expirations: ' + state.expirations.length + ' · Rows computed: ' + res.rows.length);
+    }catch(err){
+      showError(err);
+    }
+  }
+
+  function showError(err){
+    setStatus('err', 'Fetch failed');
+    const msg = (err && err.message ? err.message : String(err));
+    const lines = msg.split('\n');
+    const headline = lines[0];
+    const detail = lines.slice(1).map(l => '<div>' + l.replace(/</g,'&lt;') + '</div>').join('');
+    document.getElementById('tableScroll').innerHTML = `<div class="state-msg">
+      <div class="big">Couldn't load live data</div>
+      <div class="small">${headline}${detail}</div>
+      <button id="retryBtn">Retry</button>
+    </div>`;
+    document.getElementById('chartContainer').innerHTML = '';
+    document.getElementById('chartSub').textContent = 'No data — see error below.';
+    const rb = document.getElementById('retryBtn');
+    if (rb) rb.addEventListener('click', fullLoad);
+    console.error(err);
+  }
+
+  async function fullLoad(){
+    if (state.loading) return;
+    state.loading = true;
+    document.getElementById('refreshBtn').disabled = true;
+    setStatus('pending', 'Fetching spot, options chain, and open interest…');
+    try{
+      await Promise.all([loadSpot(), loadExchangeInfo()]);
+      await loadMarkData();
+      renderExpiryTabs();
+      renderHeader();
+      await refreshComputationOnly();
+    }catch(err){
+      showError(err);
+    }finally{
+      state.loading = false;
+      document.getElementById('refreshBtn').disabled = false;
+    }
+  }
+
+  // ---------------- Wire up controls ----------------
+  document.getElementById('refreshBtn').addEventListener('click', fullLoad);
+  document.getElementById('convSwitch').addEventListener('click', async () => {
+    state.dealerConvention *= -1;
+    const on = state.dealerConvention === -1;
+    document.getElementById('convSwitch').className = 'switch' + (on?' on':'');
+    document.getElementById('convLabel').textContent = on ? 'Dealers: long calls / short puts' : 'Dealers: short calls / long puts';
+    document.getElementById('convFooter').textContent = on ? 'long calls and short puts' : 'short calls and long puts';
+    await refreshComputationOnly();
+  });
+
+  // ---------------- Boot ----------------
+  fullLoad();
+  state.refreshTimer = setInterval(fullLoad, 60000);
+
+})();
+</script>
+</body>
+</html>
